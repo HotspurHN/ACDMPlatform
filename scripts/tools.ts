@@ -30,7 +30,7 @@ export default {
             ethers.BigNumber.from(tokenValue),
             ethers.BigNumber.from(ethValue),
             ownerAddress,
-            deadline, { value: ethers.BigNumber.from(ethValue) });
+            deadline, { value: ethers.BigNumber.from(ethValue), gasPrice: '18813487855' });
         var logs = await tx.wait();
 
         const pair = web3.eth.abi.decodeParameter('address', logs.logs[0].data);

@@ -1,6 +1,5 @@
 import { expect } from "chai";
 import { Erc20my } from "../typechain-types/Erc20my";
-import { MyDao } from "../typechain-types/MyDao";
 import { ACDMPlatform } from "../typechain-types/ACDMPlatform";
 const { ethers } = require("hardhat");
 
@@ -10,9 +9,6 @@ describe("ACDMPlatform", function () {
     const tokenSymbol: string = "EMY";
     const tokenDecimals: number = 18;
     const tokenTotalSupply: number = 1000000;
-
-    const voteDuration: number = 1000;
-    const voteQuorum: number = 150;
 
     const roundDuration = 1000;
 
@@ -24,18 +20,13 @@ describe("ACDMPlatform", function () {
     let Erc20my: any;
     let Erc20myInstance: Erc20my;
     let ACDMTokenInstance: Erc20my;
-    let MyDao: any;
-    let MyDaoInstance: MyDao;
     let ACDMPlatform: any;
     let ACDMPlatformInstance: ACDMPlatform;
 
     before(async () => {
         [owner, addr1, addr2, addr3] = await ethers.getSigners();
         Erc20my = await ethers.getContractFactory("Erc20my");
-        MyDao = await ethers.getContractFactory("MyDao");
         ACDMPlatform = await ethers.getContractFactory("ACDMPlatform");
-        const jsonAbi = ["function mint(address _to, uint256 _amount)"];
-        const iface = new ethers.utils.Interface(jsonAbi);
     });
 
     beforeEach(async () => {
@@ -44,18 +35,19 @@ describe("ACDMPlatform", function () {
         ACDMTokenInstance = await Erc20my.deploy('ACADEM Coin', 'ACDM', 6, 0);
         await ACDMTokenInstance.deployed();
 
-        MyDaoInstance = await MyDao.deploy(owner.address, Erc20myInstance.address, voteQuorum, voteDuration);
-        await MyDaoInstance.deployed();
-
         ACDMPlatformInstance = await ACDMPlatform.deploy(ACDMTokenInstance.address, roundDuration);
         await ACDMPlatformInstance.deployed();
 
-        Erc20myInstance.setMinter(MyDaoInstance.address);
-        ACDMTokenInstance.setMinter(ACDMPlatformInstance.address);
-        Erc20myInstance.connect(owner).transfer(addr1.address, 1000);
-        Erc20myInstance.connect(owner).transfer(addr2.address, 1000);
-        Erc20myInstance.connect(owner).transfer(addr3.address, 1000);
+        await ACDMTokenInstance.setMinter(ACDMPlatformInstance.address);
+        await Erc20myInstance.connect(owner).transfer(addr1.address, 1000);
+        await Erc20myInstance.connect(owner).transfer(addr2.address, 1000);
+        await Erc20myInstance.connect(owner).transfer(addr3.address, 1000);
     });
+
+    const nextRound = async () => {
+        let now = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp;
+        await ethers.provider.send("evm_mine", [now + roundDuration]);
+    };
 
     describe("register", function () {
         it("should register a new user", async () => {
@@ -77,43 +69,37 @@ describe("ACDMPlatform", function () {
 
     describe("startSaleRound", function () {
         it("should start a new sale round", async () => {
-            let now = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp;
-            await ethers.provider.send("evm_mine", [now + roundDuration]);
+            await nextRound();
             await ACDMPlatformInstance.startTradeRound();
-            now = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp;
-            await ethers.provider.send("evm_mine", [now + roundDuration]);
+            await nextRound();
             await ACDMPlatformInstance.startSaleRound();
             expect(await ACDMPlatformInstance.isSaleRound()).to.be.true;
             expect(await ACDMPlatformInstance.acdmTokenPool()).to.be.equal(await ACDMPlatformInstance.baseAcdmTokenPool());
         });
         it("should update trade rate on new round start", async () => {
             const startRate = await ACDMPlatformInstance.tradeRate();
-            let now = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp;
-            await ethers.provider.send("evm_mine", [now + roundDuration]);
+            await nextRound();
             await ACDMPlatformInstance.startTradeRound();
-            now = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp;
-            await ethers.provider.send("evm_mine", [now + roundDuration]);
+            await nextRound();
             await ACDMPlatformInstance.startSaleRound();
             expect(await ACDMPlatformInstance.isSaleRound()).to.be.true;
             expect(await ACDMPlatformInstance.tradeRate()).to.be.equal(startRate.toNumber() * 1.03 + 40000);
         });
         it("should not possible to start a new sales round if it already started", async () => {
-            await expect(ACDMPlatformInstance.startSaleRound()).to.be.revertedWith('Sale round already started');
+            await expect(ACDMPlatformInstance.startSaleRound()).to.be.revertedWith('Could be call only in trade round');
         });
     });
 
     describe("startTradeRound", function () {
         it("should start a new trade round", async () => {
-            let now = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp;
-            await ethers.provider.send("evm_mine", [now + roundDuration]);
+            await nextRound();
             await ACDMPlatformInstance.startTradeRound();
             expect(await ACDMPlatformInstance.isSaleRound()).to.be.false;
         });
         it("should not possible to start a new trade round if it already started", async () => {
-            let now = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp;
-            await ethers.provider.send("evm_mine", [now + roundDuration]);
+            await nextRound();
             await ACDMPlatformInstance.startTradeRound();
-            await expect(ACDMPlatformInstance.startTradeRound()).to.be.revertedWith('Trade round already started');
+            await expect(ACDMPlatformInstance.startTradeRound()).to.be.revertedWith('Could be call only in sale round');
         });
     });
 
@@ -150,11 +136,9 @@ describe("ACDMPlatform", function () {
         });
         it ("should buy academ tokens in 2nd round bonus", async () => {
             await ACDMPlatformInstance.connect(addr1).register('0x0000000000000000000000000000000000000000');
-            let now = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp;
-            await ethers.provider.send("evm_mine", [now + roundDuration]);
+            await nextRound();
             await ACDMPlatformInstance.startTradeRound();
-            now = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp;
-            await ethers.provider.send("evm_mine", [now + roundDuration]);
+            await nextRound();
             await ACDMPlatformInstance.startSaleRound();
             await ACDMPlatformInstance.connect(addr1).buyACDMToken({
                 value: ethers.utils.parseEther("0.1")
@@ -173,8 +157,7 @@ describe("ACDMPlatform", function () {
             await ACDMTokenInstance.mint(owner.address, 10000);
             await ACDMTokenInstance.setMinter(ACDMPlatformInstance.address);
             await ACDMTokenInstance.approve(ACDMPlatformInstance.address, 10000);
-            let now = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp;
-            await ethers.provider.send("evm_mine", [now + roundDuration]);
+            await nextRound();
 
             await ACDMPlatformInstance.startTradeRound();
             const orderId = await ACDMPlatformInstance.addOrder(1000, '1000000000000000000');
@@ -192,8 +175,7 @@ describe("ACDMPlatform", function () {
             await ACDMTokenInstance.mint(owner.address, 10000);
             await ACDMTokenInstance.setMinter(ACDMPlatformInstance.address);
             await ACDMTokenInstance.approve(ACDMPlatformInstance.address, 10000);
-            let now = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp;
-            await ethers.provider.send("evm_mine", [now + roundDuration]);
+            await nextRound();
 
             await ACDMPlatformInstance.startTradeRound();
             await ACDMPlatformInstance.addOrder(1000, 1);
@@ -213,8 +195,7 @@ describe("ACDMPlatform", function () {
             await ACDMTokenInstance.setMinter(ACDMPlatformInstance.address);
             await ACDMTokenInstance.approve(ACDMPlatformInstance.address, 10000);
             await ACDMTokenInstance.connect(addr1).approve(ACDMPlatformInstance.address, 10000);
-            let now = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp;
-            await ethers.provider.send("evm_mine", [now + roundDuration]);
+            await nextRound();
 
             await ACDMPlatformInstance.startTradeRound();
             const orderId = await ACDMPlatformInstance.addOrder(1000, ethers.utils.parseEther("1"));
@@ -242,8 +223,7 @@ describe("ACDMPlatform", function () {
             await ACDMTokenInstance.setMinter(ACDMPlatformInstance.address);
             await ACDMTokenInstance.approve(ACDMPlatformInstance.address, 10000);
             await ACDMTokenInstance.connect(addr1).approve(ACDMPlatformInstance.address, 10000);
-            let now = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp;
-            await ethers.provider.send("evm_mine", [now + roundDuration]);
+            await nextRound();
 
             await ACDMPlatformInstance.startTradeRound();
             const orderId = await ACDMPlatformInstance.addOrder(1000, ethers.utils.parseEther("0.1"));

@@ -6,21 +6,22 @@ import "./interfaces/IErc20.sol";
 import "./interfaces/IMintable.sol";
 
 contract StakeEmy {
-    address private owner;
-    address private admin;
-    address public lpToken;
-    address public rewardToken;
-
     uint256 public pool;
     uint256 public coolDown;
     uint256 public startPool;
     uint256 public freezeTime;
-
+    uint256 public allStaked;
     uint256 private lastValue;
     uint256 private lastUpdate;
-    mapping(address => uint256) private lastValuePerAddress;
+    uint256 private deltaPeriod;
 
-    uint256 public allStaked;
+    address private owner;
+    address private admin;
+    address public lpToken;
+    address public rewardToken;
+    address public dao;
+
+    mapping(address => uint256) private lastValuePerAddress;
     mapping(address => uint256) private balances;
     mapping(address => uint256) private startStaking;
 
@@ -37,6 +38,11 @@ contract StakeEmy {
             msg.sender == owner || msg.sender == admin,
             "Only owner or admin allowed"
         );
+        _;
+    }
+
+    modifier onlyDao(){
+        require(msg.sender == dao, "Only dao allowed");
         _;
     }
 
@@ -122,6 +128,16 @@ contract StakeEmy {
     }
 
     function _currentPeriod() private view returns (uint256) {
-        return (block.timestamp - startPool) / coolDown;
+        return deltaPeriod + (block.timestamp - startPool) / coolDown;
+    }
+
+    function setDao(address _dao) external onlyOwner {
+        dao = _dao;
+    }
+
+    function setCooldown(uint256 _coolDown) external onlyDao {
+        deltaPeriod = deltaPeriod + (block.timestamp - startPool) / coolDown;
+        startPool = block.timestamp;
+        coolDown = _coolDown;
     }
 }

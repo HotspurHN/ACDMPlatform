@@ -110,9 +110,6 @@ contract MyDao {
 
     function withdraw(uint256 _amount) external {
         require(balances[msg.sender] >= _amount, "Not enough balance");
-        if (endVote[msg.sender] >= block.timestamp) {
-            revert("You have active votings");
-        }
         balances[msg.sender] -= _amount;
         IErc20(token).transfer(msg.sender, _amount);
     }

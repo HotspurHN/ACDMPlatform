@@ -215,13 +215,13 @@ describe("MyDao", function () {
             await MyDaoInstance.connect(addr1).deposit(value);
             await expect(MyDaoInstance.connect(addr1).withdraw(value + 1)).to.be.revertedWith("Not enough balance");
         });
-        it ("should not be possible to withdraw while active votings", async function () {
+        it ("should be possible to withdraw while active votings", async function () {
             const value = 100;
             await Erc20myInstance.connect(addr1).approve(MyDaoInstance.address, value);
             await MyDaoInstance.connect(addr1).deposit(value);
             const proposalId = await MyDaoInstance.addProposal(calldata, Erc20myInstance.address, "description");
             await MyDaoInstance.connect(addr1).vote(proposalId.value, false);
-            await expect(MyDaoInstance.connect(addr1).withdraw(value)).to.be.revertedWith("You have active votings");
+            await expect(MyDaoInstance.connect(addr1).withdraw(value)).not.to.be.reverted;
         });
         it ("should be possible to widthdraw after voting period", async function () {
             const value = 100;

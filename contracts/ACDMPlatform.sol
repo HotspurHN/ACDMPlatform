@@ -7,26 +7,27 @@ import "./interfaces/IMintable.sol";
 
 contract ACDMPlatform {
 
-    bool public isSaleRound = true;
-    uint256 public roundTime = 0;
-    uint256 public roundStart = 0;
-
-    address public acdmToken;
-    address public dao;
-    address public owner;
-
+    uint256 public immutable roundTime;
+    uint256 public immutable baseAcdmTokenPool;
+    uint256 public immutable baseRate;
+    uint256 public roundStart;
     uint256 public acdmTokenPool;
-    uint256 public baseAcdmTokenPool;
-    uint256 public baseRate;
     uint256 public tradeRate;
 
     uint256 public ref1Tax = 50;
     uint256 public ref2Tax = 30;
     uint256 public acdmTax = 25;
 
+    bool public isSaleRound = true;
+
+    address public immutable acdmToken;
+    address public immutable owner;
+    address public dao;
+
+    Order[] public orders;
+
     mapping(address => bool) public registeredUsers;
     mapping(address => address) public referrers;
-    Order[] public orders;
 
     struct Order{
         uint256 amount;
@@ -35,13 +36,39 @@ contract ACDMPlatform {
         bool isOpen;
     }
 
+    modifier onlyRegistered() {
+        require(registeredUsers[msg.sender], "Only for registered");
+        _;
+    }
+
+    modifier onlySaleRound() {
+        require(isSaleRound, "Could be call only in sale round");
+        _;
+    }
+
+    modifier onlyTradeRound() {
+        require(!isSaleRound, "Could be call only in trade round");
+        _;
+    }
+
+    modifier onlyOwner(){
+        require(msg.sender == owner, "Only owner allowed");
+        _;
+    }
+
+    modifier onlyDao(){
+        require(msg.sender == dao, "Only dao allowed");
+        _;
+    }
+
     constructor(address _acdmToken, uint256 _roundTime) {
         acdmToken = _acdmToken;
         roundTime = _roundTime;
         roundStart = block.timestamp;
         tradeRate = 100000;
-        baseRate = 10 ** IErc20(acdmToken).getDecimals() * tradeRate ** 2;
-        acdmTokenPool = 100000 * 10 ** IErc20(acdmToken).getDecimals();
+        uint256 decimals = IErc20(_acdmToken).getDecimals();
+        baseRate = 10 ** decimals * tradeRate ** 2;
+        acdmTokenPool = 100000 * 10 ** decimals;
         baseAcdmTokenPool = acdmTokenPool;
         owner = msg.sender;
     }
@@ -53,23 +80,19 @@ contract ACDMPlatform {
         referrers[msg.sender] = _referrer;
     }
 
-    function startSaleRound() external {
-        require(!isSaleRound, "Sale round already started");
+    function startSaleRound() onlyTradeRound external {
         require(block.timestamp >= roundStart + roundTime, "Trade round is not finished yet");
         tradeRate =  tradeRate * 103 / 100 + 40000;
         isSaleRound = true;
         acdmTokenPool = baseAcdmTokenPool;
         roundStart = block.timestamp;
     }
-    function startTradeRound() external {
-        require(isSaleRound, "Trade round already started");
+    function startTradeRound() onlySaleRound external {
         require(block.timestamp >= roundStart + roundTime, "Sale round is not finished yet");
         isSaleRound = false;
         roundStart = block.timestamp;
     }
-    function addOrder(uint256 _acdmTokenAmount, uint256 _ethValue) external returns(uint256) {
-        require(registeredUsers[msg.sender], "Only for registered");
-        require(!isSaleRound, "Trade round not started");
+    function addOrder(uint256 _acdmTokenAmount, uint256 _ethValue) onlyRegistered onlyTradeRound external returns(uint256) {
         require(_acdmTokenAmount > 0, "Amount must be greater than 0");
         require(_ethValue > 0, "Value must be greater than 0");
         uint256 orderId = orders.length;
@@ -83,17 +106,14 @@ contract ACDMPlatform {
         IErc20(acdmToken).transferFrom(msg.sender, address(this), _acdmTokenAmount);
         return orderId;
     }
-    function removeOrder(uint256 _id) external {
-        require(registeredUsers[msg.sender], "Only for registered");
+    function removeOrder(uint256 _id) onlyRegistered external {
         require(_id < orders.length, "Order not found");
         Order storage order = orders[_id];
         require(order.isOpen, "Order already closed");
         IErc20(acdmToken).transfer(msg.sender, order.amount);
         order.isOpen = false;
     }
-    function redeemOrder(uint256 _id) external payable {
-        require(registeredUsers[msg.sender], "Only for registered");
-        require(!isSaleRound, "Trade round not started");
+    function redeemOrder(uint256 _id) onlyRegistered onlyTradeRound external payable {
         require(_id < orders.length, "Order not found");
         Order storage order = orders[_id];
         require(order.isOpen, "Order is closed");
@@ -112,9 +132,7 @@ contract ACDMPlatform {
         payable(order.owner).transfer(msg.value);
         IErc20(acdmToken).transfer(msg.sender, amount - amount * 2 * acdmTax / 1000);
     }
-    function buyACDMToken() external payable {
-        require(registeredUsers[msg.sender], "Only for registered");
-        require(isSaleRound, "Sale round not started");
+    function buyACDMToken() onlyRegistered onlySaleRound external payable {
         uint256 amount = (msg.value * baseRate) / (tradeRate * 10 ** 18);
         require(amount > 0, "Amount must be greater than 0");
         require(amount <= acdmTokenPool, "Not enough tokens in pool");
@@ -129,15 +147,13 @@ contract ACDMPlatform {
             }
         }
     }
-    function setTaxes(uint256 _tax1, uint256 _tax2, uint256 _acdmTax) external {
-        require(dao == msg.sender, "Only DAO can change taxes");
+    function setTaxes(uint256 _tax1, uint256 _tax2, uint256 _acdmTax) onlyDao external {
         ref1Tax = _tax1;
         ref2Tax = _tax2;
         acdmTax = _acdmTax;
     }
 
-    function setDao(address _dao) external {
-        require(owner == msg.sender, "Only owner can set DAO");
+    function setDao(address _dao) onlyOwner external {
         dao = _dao;
     }
 }
