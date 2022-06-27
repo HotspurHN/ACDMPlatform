@@ -2,11 +2,13 @@
 pragma solidity ^0.8.0;
 
 import "hardhat/console.sol";
-import "./interfaces/IErc20.sol";
 import "./interfaces/IMintable.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 contract ACDMPlatform {
 
+    address public immutable acdmToken;
+    address public immutable owner;
     uint256 public immutable roundTime;
     uint256 public immutable baseAcdmTokenPool;
     uint256 public immutable baseRate;
@@ -14,14 +16,10 @@ contract ACDMPlatform {
     uint256 public acdmTokenPool;
     uint256 public tradeRate;
 
-    uint256 public ref1Tax = 50;
-    uint256 public ref2Tax = 30;
-    uint256 public acdmTax = 25;
-
+    uint32 public ref1Tax = 50;
+    uint32 public ref2Tax = 30;
+    uint24 public acdmTax = 25;
     bool public isSaleRound = true;
-
-    address public immutable acdmToken;
-    address public immutable owner;
     address public dao;
 
     Order[] public orders;
@@ -33,7 +31,6 @@ contract ACDMPlatform {
         uint256 amount;
         uint256 price;
         address payable owner;
-        bool isOpen;
     }
 
     modifier onlyRegistered() {
@@ -66,7 +63,7 @@ contract ACDMPlatform {
         roundTime = _roundTime;
         roundStart = block.timestamp;
         tradeRate = 100000;
-        uint256 decimals = IErc20(_acdmToken).getDecimals();
+        uint256 decimals = ERC20(_acdmToken).decimals();
         baseRate = 10 ** decimals * tradeRate ** 2;
         acdmTokenPool = 100000 * 10 ** decimals;
         baseAcdmTokenPool = acdmTokenPool;
@@ -99,40 +96,36 @@ contract ACDMPlatform {
         Order memory order = Order({
             owner: payable (msg.sender),
             amount: _acdmTokenAmount,
-            price: _ethValue / _acdmTokenAmount,
-            isOpen: true
+            price: _ethValue / _acdmTokenAmount
         });
         orders.push(order);
-        IErc20(acdmToken).transferFrom(msg.sender, address(this), _acdmTokenAmount);
+        ERC20(acdmToken).transferFrom(msg.sender, address(this), _acdmTokenAmount);
         return orderId;
     }
     function removeOrder(uint256 _id) onlyRegistered external {
         require(_id < orders.length, "Order not found");
-        Order storage order = orders[_id];
-        require(order.isOpen, "Order already closed");
-        IErc20(acdmToken).transfer(msg.sender, order.amount);
-        order.isOpen = false;
+        Order memory order = orders[_id];
+        require(order.amount > 0, "Order already closed");
+        orders[_id].amount = 0;
+        ERC20(acdmToken).transfer(msg.sender, order.amount);
     }
-    function redeemOrder(uint256 _id) onlyRegistered onlyTradeRound external payable {
+    function redeemOrder(uint256 _id) external onlyRegistered onlyTradeRound payable {
         require(_id < orders.length, "Order not found");
         Order storage order = orders[_id];
-        require(order.isOpen, "Order is closed");
+        require(order.amount > 0, "Order is closed");
         uint256 amount = msg.value / order.price;
         require(amount <= order.amount, "Not enough ACDM Tokens");
-        if (order.amount == amount){
-            order.isOpen = false;
-        }
         order.amount -= amount;
         if (referrers[msg.sender] != address(0)){
-            IErc20(acdmToken).transfer(referrers[msg.sender], amount * acdmTax / 1000);
+            ERC20(acdmToken).transfer(referrers[msg.sender], amount * acdmTax / 1000);
             if (referrers[referrers[msg.sender]] != address(0)){
-                IErc20(acdmToken).transfer(referrers[referrers[msg.sender]], amount * acdmTax / 1000);
+                ERC20(acdmToken).transfer(referrers[referrers[msg.sender]], amount * acdmTax / 1000);
             }
         }
         payable(order.owner).transfer(msg.value);
-        IErc20(acdmToken).transfer(msg.sender, amount - amount * 2 * acdmTax / 1000);
+        ERC20(acdmToken).transfer(msg.sender, amount - amount * 2 * acdmTax / 1000);
     }
-    function buyACDMToken() onlyRegistered onlySaleRound external payable {
+    function buyACDMToken() external onlyRegistered onlySaleRound payable {
         uint256 amount = (msg.value * baseRate) / (tradeRate * 10 ** 18);
         require(amount > 0, "Amount must be greater than 0");
         require(amount <= acdmTokenPool, "Not enough tokens in pool");
@@ -147,13 +140,13 @@ contract ACDMPlatform {
             }
         }
     }
-    function setTaxes(uint256 _tax1, uint256 _tax2, uint256 _acdmTax) onlyDao external {
+    function setTaxes(uint32 _tax1, uint32 _tax2, uint24 _acdmTax) external onlyDao {
         ref1Tax = _tax1;
         ref2Tax = _tax2;
         acdmTax = _acdmTax;
     }
 
-    function setDao(address _dao) onlyOwner external {
+    function setDao(address _dao) external onlyOwner {
         dao = _dao;
     }
 }

@@ -1,16 +1,15 @@
 //SPDX-License-Identifier: Unlicense
 pragma solidity ^0.8.0;
 
-import "./interfaces/IErc20.sol";
+import "./interfaces/IStake.sol";
 import "./interfaces/IMintable.sol";
 
 contract MyDao {
     uint256 public immutable minimumQuorum;
     uint256 public immutable duration;
     address public immutable chairman;
-    address public immutable token;
+    address public immutable stake;
     Proposal[] public proposals;
-    mapping(address => uint256) public balances;
     mapping(uint256 => mapping(address => bool)) public voted;
     mapping(address => uint256) public endVote;
 
@@ -35,19 +34,14 @@ contract MyDao {
 
     constructor(
         address _chairman,
-        address _token,
+        address _stake,
         uint256 _minimumQuorum,
         uint256 _duration
     ) {
         chairman = _chairman;
-        token = _token;
+        stake = _stake;
         minimumQuorum = _minimumQuorum;
         duration = _duration;
-    }
-
-    function deposit(uint256 _amount) external {
-        balances[msg.sender] += _amount;
-        IErc20(token).transferFrom(msg.sender, address(this), _amount);
     }
 
     function addProposal(
@@ -79,9 +73,9 @@ contract MyDao {
             "Voting period has ended"
         );
         if (_answer) {
-            proposal.votesYes += balances[msg.sender];
+            proposal.votesYes += IStake(stake).balanceOf(msg.sender);
         } else {
-            proposal.votesNo += balances[msg.sender];
+            proposal.votesNo +=  IStake(stake).balanceOf(msg.sender);
         }
         voted[_proposalIndex][msg.sender] = true;
         endVote[msg.sender] = proposal.startTime + duration;
@@ -108,9 +102,7 @@ contract MyDao {
         emit ProposalFinished(_proposalIndex, result);
     }
 
-    function withdraw(uint256 _amount) external {
-        require(balances[msg.sender] >= _amount, "Not enough balance");
-        balances[msg.sender] -= _amount;
-        IErc20(token).transfer(msg.sender, _amount);
+    function lastVotingEndTime(address) external view returns (uint256) {
+        return endVote[msg.sender];
     }
 }

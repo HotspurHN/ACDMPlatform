@@ -32,6 +32,7 @@ describe("ACDMPlatform", function () {
     beforeEach(async () => {
         Erc20myInstance = await Erc20my.deploy(tokenName, tokenSymbol, tokenDecimals, tokenTotalSupply);
         await Erc20myInstance.deployed();
+        
         ACDMTokenInstance = await Erc20my.deploy('ACADEM Coin', 'ACDM', 6, 0);
         await ACDMTokenInstance.deployed();
 
@@ -178,8 +179,8 @@ describe("ACDMPlatform", function () {
             await nextRound();
 
             await ACDMPlatformInstance.startTradeRound();
-            await ACDMPlatformInstance.addOrder(1000, 1);
-            await ACDMPlatformInstance.removeOrder(0);
+            const orderId = await ACDMPlatformInstance.addOrder(1000, 1);
+            await ACDMPlatformInstance.removeOrder(orderId.value);
 
             expect(await ACDMTokenInstance.balanceOf(owner.address)).to.be.equals(10000);
         });

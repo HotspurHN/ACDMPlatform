@@ -1,8 +1,9 @@
 import { expect } from "chai";
 import { StakeEmy } from "../typechain-types/StakeEmy";
 import { Erc20my } from "../typechain-types/Erc20my";
+import { MyDao } from "../typechain-types/MyDao";
 import { IUniswapV2Router02 } from "../typechain-types/uniswap/IUniswapV2Router02";
-import { IErc20 } from "../typechain-types/interfaces/IErc20";
+import { IERC20 } from "../typechain-types/@openzeppelin/contracts/token/ERC20/IERC20";
 const { ethers } = require("hardhat");
 import testTools from "./tools";
 import tools from "../scripts/tools";
@@ -17,8 +18,10 @@ describe("StakeEmy", function () {
     let StakeEmyInstance: StakeEmy;
     let Erc20my: any;
     let Erc20myInstance: Erc20my;
+    let MyDao: any;
+    let MyDaoInstance: MyDao;
     let Router: IUniswapV2Router02;
-    let PairErc20: IErc20;
+    let PairErc20: IERC20;
 
     const tokenName: string = "Erc20my";
     const tokenSymbol: string = "EMY";
@@ -37,6 +40,7 @@ describe("StakeEmy", function () {
         [owner, addr1, addr2] = await ethers.getSigners();
         StakeEmy = await ethers.getContractFactory("StakeEmy");
         Erc20my = await ethers.getContractFactory("Erc20my");
+        MyDao = await ethers.getContractFactory("MyDao");
         Router = await ethers.getContractAt("IUniswapV2Router02", constants.uniswapRouterAddress);
     });
 
@@ -45,6 +49,9 @@ describe("StakeEmy", function () {
         await Erc20myInstance.deployed();
         StakeEmyInstance = await StakeEmy.deploy(Erc20myInstance.address, pool, coolDown, freeze);
         await StakeEmyInstance.deployed();
+        MyDaoInstance = await MyDao.deploy(owner.address, StakeEmyInstance.address, 100, 100);
+        await MyDaoInstance.deployed();
+        await StakeEmyInstance.setDao(MyDaoInstance.address);
         await Erc20myInstance.setMinter(StakeEmyInstance.address);
     });
 

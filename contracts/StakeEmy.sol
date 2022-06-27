@@ -2,10 +2,12 @@
 pragma solidity ^0.8.0;
 
 import "hardhat/console.sol";
-import "./interfaces/IErc20.sol";
 import "./interfaces/IMintable.sol";
+import "./interfaces/IStake.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "./MyDao.sol";
 
-contract StakeEmy {
+contract StakeEmy is IStake {
     uint256 public pool;
     uint256 public coolDown;
     uint256 public startPool;
@@ -66,7 +68,7 @@ contract StakeEmy {
         } else {
             lastValuePerAddress[msg.sender] = lastValue;
         }
-        IErc20(lpToken).transferFrom(msg.sender, address(this), _amount);
+        IERC20(lpToken).transferFrom(msg.sender, address(this), _amount);
         balances[msg.sender] += _amount;
         allStaked += _amount;
         startStaking[msg.sender] = block.timestamp;
@@ -80,10 +82,11 @@ contract StakeEmy {
             startStaking[msg.sender] <= block.timestamp - freezeTime,
             "Tokens still frozen"
         );
+        require(MyDao(dao).lastVotingEndTime(msg.sender) < block.timestamp, "Voting not finished");
         _claim();
         balances[msg.sender] -= _amount;
         allStaked -= _amount;
-        IErc20(lpToken).transfer(msg.sender, _amount);
+        IERC20(lpToken).transfer(msg.sender, _amount);
         emit Unstake(msg.sender, _amount);
     }
 
@@ -112,7 +115,7 @@ contract StakeEmy {
         admin = _admin;
     }
 
-    function balanceOf(address _owner) public view returns (uint256) {
+    function balanceOf(address _owner) public override view returns (uint256) {
         return balances[_owner];
     }
 

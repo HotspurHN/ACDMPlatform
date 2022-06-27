@@ -1,5 +1,6 @@
 import { expect } from "chai";
 import { Erc20my } from "../typechain-types/Erc20my";
+import { StakeEmy } from "../typechain-types/StakeEmy";
 import { MyDao } from "../typechain-types/MyDao";
 const { ethers } = require("hardhat");
 
@@ -22,6 +23,8 @@ describe("MyDao", function () {
     let Erc20myInstance: Erc20my;
     let MyDao: any;
     let MyDaoInstance: MyDao;
+    let StakeEmy: any;
+    let StakeEmyInstance: StakeEmy;
 
     let calldata: any;
 
@@ -29,6 +32,8 @@ describe("MyDao", function () {
         [owner, addr1, addr2, addr3] = await ethers.getSigners();
         Erc20my = await ethers.getContractFactory("Erc20my");
         MyDao = await ethers.getContractFactory("MyDao");
+        StakeEmy = await ethers.getContractFactory("StakeEmy");
+
         const jsonAbi = ["function mint(address _to, uint256 _amount)"];
         const iface = new ethers.utils.Interface(jsonAbi);
         calldata = iface.encodeFunctionData('mint',[addr3.address, 10001]);
@@ -37,35 +42,30 @@ describe("MyDao", function () {
     beforeEach(async () => {
         Erc20myInstance = await Erc20my.deploy(tokenName, tokenSymbol, tokenDecimals, tokenTotalSupply);
         await Erc20myInstance.deployed();
-        MyDaoInstance = await MyDao.deploy(owner.address, Erc20myInstance.address, voteQuorum, voteDuration);
+        StakeEmyInstance = await StakeEmy.deploy(Erc20myInstance.address, '10000000', 120, 260);
+        await StakeEmyInstance.deployed();
+        await StakeEmyInstance.setLPToken(Erc20myInstance.address);
+        MyDaoInstance = await MyDao.deploy(owner.address, StakeEmyInstance.address, voteQuorum, voteDuration);
         await MyDaoInstance.deployed();
+        await StakeEmyInstance.setDao(MyDaoInstance.address);
         Erc20myInstance.setMinter(MyDaoInstance.address);
         Erc20myInstance.connect(owner).transfer(addr1.address, 1000);
         Erc20myInstance.connect(owner).transfer(addr2.address, 1000);
         Erc20myInstance.connect(owner).transfer(addr3.address, 1000);
     });
 
-    describe("deposit", function () {
-        it("should deposit tokens", async function () {
-            const value = 100;
-            await Erc20myInstance.approve(MyDaoInstance.address, value);
-            await MyDaoInstance.deposit(value);
-            const balance = await Erc20myInstance.balanceOf(MyDaoInstance.address);
-            expect(balance).to.equal(value);
-        });
-    });
     describe("addProposal", function () {
         it("should add proposal", async function () {
             const value = 100;
-            await Erc20myInstance.approve(MyDaoInstance.address, value);
-            await MyDaoInstance.deposit(value);
+            await Erc20myInstance.approve(StakeEmyInstance.address, value);
+            await StakeEmyInstance.stake(value);
             const proposalId = await MyDaoInstance.addProposal(calldata, Erc20myInstance.address, "description");
             expect(proposalId.value).to.equal(0);
         });
         it("should be possible to add proposal only for chairman", async function () {
             const value = 100;
-            await Erc20myInstance.approve(MyDaoInstance.address, value);
-            await MyDaoInstance.deposit(value);
+            await Erc20myInstance.approve(StakeEmyInstance.address, value);
+            await StakeEmyInstance.stake(value);
             await expect(MyDaoInstance.connect(addr1).addProposal(calldata, Erc20myInstance.address, "description")).to.be.revertedWith("Only chairman allowed");
         });
     });
@@ -73,10 +73,10 @@ describe("MyDao", function () {
     describe("vote", function () {
         it("should vote", async function () {
             const value = 100;
-            await Erc20myInstance.connect(addr1).approve(MyDaoInstance.address, value - 10);
-            await Erc20myInstance.connect(addr2).approve(MyDaoInstance.address, value);
-            await MyDaoInstance.connect(addr1).deposit(value - 10);
-            await MyDaoInstance.connect(addr2).deposit(value);
+            await Erc20myInstance.connect(addr1).approve(StakeEmyInstance.address, value - 10);
+            await Erc20myInstance.connect(addr2).approve(StakeEmyInstance.address, value);
+            await StakeEmyInstance.connect(addr1).stake(value - 10);
+            await StakeEmyInstance.connect(addr2).stake(value);
             const proposalId = await MyDaoInstance.addProposal(calldata, Erc20myInstance.address, "description");
             await MyDaoInstance.connect(addr1).vote(proposalId.value, false);
             await MyDaoInstance.connect(addr2).vote(proposalId.value, true);
@@ -93,8 +93,8 @@ describe("MyDao", function () {
         });
         it("Should not be possible to vote twice", async function () {
             const value = 100;
-            await Erc20myInstance.connect(addr1).approve(MyDaoInstance.address, value);
-            await MyDaoInstance.connect(addr1).deposit(value);
+            await Erc20myInstance.connect(addr1).approve(StakeEmyInstance.address, value);
+            await StakeEmyInstance.connect(addr1).stake(value);
             const proposalId = await MyDaoInstance.addProposal(calldata, Erc20myInstance.address, "description");
             await MyDaoInstance.connect(addr1).vote(proposalId.value, false);
             await expect(MyDaoInstance.connect(addr1).vote(proposalId.value, false)).to.be.revertedWith("You have already voted");
@@ -102,8 +102,8 @@ describe("MyDao", function () {
 
         it("should not be possible to vote after vote duration", async function () {
             const value = 100;
-            await Erc20myInstance.connect(addr1).approve(MyDaoInstance.address, value);
-            await MyDaoInstance.connect(addr1).deposit(value);
+            await Erc20myInstance.connect(addr1).approve(StakeEmyInstance.address, value);
+            await StakeEmyInstance.connect(addr1).stake(value);
             const proposalId = await MyDaoInstance.addProposal(calldata, Erc20myInstance.address, "description");
             const now = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp;
             await ethers.provider.send("evm_mine", [now + voteDuration]);
@@ -114,10 +114,10 @@ describe("MyDao", function () {
     describe("finishProposal", function () {
         it("should finish proposal and execute function", async function () {
             const value = 100;
-            await Erc20myInstance.connect(addr1).approve(MyDaoInstance.address, value - 10);
-            await Erc20myInstance.connect(addr2).approve(MyDaoInstance.address, value);
-            await MyDaoInstance.connect(addr1).deposit(value - 10);
-            await MyDaoInstance.connect(addr2).deposit(value);
+            await Erc20myInstance.connect(addr1).approve(StakeEmyInstance.address, value - 10);
+            await Erc20myInstance.connect(addr2).approve(StakeEmyInstance.address, value);
+            await StakeEmyInstance.connect(addr1).stake(value - 10);
+            await StakeEmyInstance.connect(addr2).stake(value);
             const proposalId = await MyDaoInstance.addProposal(calldata, Erc20myInstance.address, "description");
             const now = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp;
             await MyDaoInstance.connect(addr1).vote(proposalId.value, false);
@@ -134,8 +134,8 @@ describe("MyDao", function () {
 
         it("should finish proposal and not execute function with no quorum", async function () {
             const value = 100;
-            await Erc20myInstance.connect(addr1).approve(MyDaoInstance.address, value);
-            await MyDaoInstance.connect(addr1).deposit(value);
+            await Erc20myInstance.connect(addr1).approve(StakeEmyInstance.address, value);
+            await StakeEmyInstance.connect(addr1).stake(value);
             const proposalId = await MyDaoInstance.addProposal(calldata, Erc20myInstance.address, "description");
             const now = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp;
             await MyDaoInstance.connect(addr1).vote(proposalId.value, true);
@@ -150,10 +150,10 @@ describe("MyDao", function () {
 
         it("should finish proposal and not execute when no more than yes", async function () {
             const value = 100;
-            await Erc20myInstance.connect(addr1).approve(MyDaoInstance.address, value - 10);
-            await Erc20myInstance.connect(addr2).approve(MyDaoInstance.address, value);
-            await MyDaoInstance.connect(addr1).deposit(value - 10);
-            await MyDaoInstance.connect(addr2).deposit(value);
+            await Erc20myInstance.connect(addr1).approve(StakeEmyInstance.address, value - 10);
+            await Erc20myInstance.connect(addr2).approve(StakeEmyInstance.address, value);
+            await StakeEmyInstance.connect(addr1).stake(value - 10);
+            await StakeEmyInstance.connect(addr2).stake(value);
             const proposalId = await MyDaoInstance.addProposal(calldata, Erc20myInstance.address, "description");
             const now = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp;
             await MyDaoInstance.connect(addr1).vote(proposalId.value, true);
@@ -172,8 +172,8 @@ describe("MyDao", function () {
         });
         it("should not be possible to finish proposal twice", async function () {
             const value = 100;
-            await Erc20myInstance.connect(addr1).approve(MyDaoInstance.address, value);
-            await MyDaoInstance.connect(addr1).deposit(value);
+            await Erc20myInstance.connect(addr1).approve(StakeEmyInstance.address, value);
+            await StakeEmyInstance.connect(addr1).stake(value);
             const proposalId = await MyDaoInstance.addProposal(calldata, Erc20myInstance.address, "description");
             const now = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp;
             await MyDaoInstance.connect(addr1).vote(proposalId.value, true);
@@ -183,8 +183,8 @@ describe("MyDao", function () {
         });
         it("should not be possible to finish proposal before vote duration", async function () {
             const value = 100;
-            await Erc20myInstance.connect(addr1).approve(MyDaoInstance.address, value);
-            await MyDaoInstance.connect(addr1).deposit(value);
+            await Erc20myInstance.connect(addr1).approve(StakeEmyInstance.address, value);
+            await StakeEmyInstance.connect(addr1).stake(value);
             const proposalId = await MyDaoInstance.addProposal(calldata, Erc20myInstance.address, "description");
             await MyDaoInstance.connect(addr1).vote(proposalId.value, true);
             await expect(MyDaoInstance.finishProposal(proposalId.value)).to.be.revertedWith("Voting period has not yet ended");
@@ -192,8 +192,8 @@ describe("MyDao", function () {
         it("should be reverted proposal if bad call", async function () {
             const value = 180;
             await Erc20myInstance.setMinter(addr1.address);
-            await Erc20myInstance.connect(addr1).approve(MyDaoInstance.address, value);
-            await MyDaoInstance.connect(addr1).deposit(value);
+            await Erc20myInstance.connect(addr1).approve(StakeEmyInstance.address, value);
+            await StakeEmyInstance.connect(addr1).stake(value);
             const proposalId = await MyDaoInstance.addProposal(calldata, Erc20myInstance.address, "description");
             const now = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp;
             await MyDaoInstance.connect(addr1).vote(proposalId.value, true);
@@ -201,39 +201,4 @@ describe("MyDao", function () {
             await expect(MyDaoInstance.finishProposal(proposalId.value)).to.be.revertedWith("Only minter allowed");
         });
     });
-    describe("widthdraw", function () {
-        it("should withdraw", async function () {
-            const value = 100;
-            await Erc20myInstance.connect(addr1).approve(MyDaoInstance.address, value);
-            await MyDaoInstance.connect(addr1).deposit(value);
-            await MyDaoInstance.connect(addr1).withdraw(value);
-            expect(await Erc20myInstance.balanceOf(addr1.address)).to.equal(1000);
-        });
-        it("should not withdraw when not enough balance", async function () {
-            const value = 100;
-            await Erc20myInstance.connect(addr1).approve(MyDaoInstance.address, value);
-            await MyDaoInstance.connect(addr1).deposit(value);
-            await expect(MyDaoInstance.connect(addr1).withdraw(value + 1)).to.be.revertedWith("Not enough balance");
-        });
-        it ("should be possible to withdraw while active votings", async function () {
-            const value = 100;
-            await Erc20myInstance.connect(addr1).approve(MyDaoInstance.address, value);
-            await MyDaoInstance.connect(addr1).deposit(value);
-            const proposalId = await MyDaoInstance.addProposal(calldata, Erc20myInstance.address, "description");
-            await MyDaoInstance.connect(addr1).vote(proposalId.value, false);
-            await expect(MyDaoInstance.connect(addr1).withdraw(value)).not.to.be.reverted;
-        });
-        it ("should be possible to widthdraw after voting period", async function () {
-            const value = 100;
-            await Erc20myInstance.connect(addr1).approve(MyDaoInstance.address, value);
-            await MyDaoInstance.connect(addr1).deposit(value);
-            const proposalId = await MyDaoInstance.addProposal(calldata, Erc20myInstance.address, "description");
-            await MyDaoInstance.connect(addr1).vote(proposalId.value, false);
-            const now = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp;
-            await ethers.provider.send("evm_mine", [now + voteDuration]);
-            await MyDaoInstance.connect(addr1).withdraw(value);
-            expect(await Erc20myInstance.balanceOf(addr1.address)).to.equal(1000);
-        });
-    });
-
 });

@@ -16,6 +16,7 @@
     "typechain": "^8.0.0"
   },
   "dependencies": {
-    "@nomiclabs/hardhat-etherscan": "^3.0.3"
+    "@nomiclabs/hardhat-etherscan": "^3.0.3",
+    "@openzeppelin/contracts": "^4.6.0"
   }
 }

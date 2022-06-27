@@ -2,12 +2,10 @@ const { ethers } = require("hardhat");
 import { StakeEmy } from "../typechain-types/StakeEmy";
 import { Erc20my } from "../typechain-types/Erc20my";
 import { IUniswapV2Router02 } from "../typechain-types/uniswap/IUniswapV2Router02";
-import { IUniswapV2Factory } from "../typechain-types/uniswap/IUniswapV2Factory";
-import { IErc20 } from "../typechain-types/interfaces/IErc20";
 import constants from "../scripts/constants";
-import { string } from "hardhat/internal/core/params/argumentTypes";
 const Web3 = require('web3');
 const web3 = new Web3();
+import { IERC20 } from "../typechain-types/@openzeppelin/contracts/token/ERC20/IERC20";
 
 export default {
     _setLPToken: async (
@@ -36,6 +34,6 @@ export default {
         const pair = web3.eth.abi.decodeParameter('address', logs.logs[0].data);
         await StakeEmyInstance.setLPToken(pair);
 
-        return await ethers.getContractAt("IErc20", pair);
+        return await ethers.getContractAt("IERC20", pair);
     }
 };
