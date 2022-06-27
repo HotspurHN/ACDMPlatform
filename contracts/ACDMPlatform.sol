@@ -77,14 +77,14 @@ contract ACDMPlatform {
         referrers[msg.sender] = _referrer;
     }
 
-    function startSaleRound() onlyTradeRound external {
+    function startSaleRound() onlyTradeRound public {
         require(block.timestamp >= roundStart + roundTime, "Trade round is not finished yet");
         tradeRate =  tradeRate * 103 / 100 + 40000;
         isSaleRound = true;
         acdmTokenPool = baseAcdmTokenPool;
         roundStart = block.timestamp;
     }
-    function startTradeRound() onlySaleRound external {
+    function startTradeRound() onlySaleRound public {
         require(block.timestamp >= roundStart + roundTime, "Sale round is not finished yet");
         isSaleRound = false;
         roundStart = block.timestamp;
@@ -100,6 +100,7 @@ contract ACDMPlatform {
         });
         orders.push(order);
         ERC20(acdmToken).transferFrom(msg.sender, address(this), _acdmTokenAmount);
+        checkRound();
         return orderId;
     }
     function removeOrder(uint256 _id) onlyRegistered external {
@@ -108,6 +109,7 @@ contract ACDMPlatform {
         require(order.amount > 0, "Order already closed");
         orders[_id].amount = 0;
         ERC20(acdmToken).transfer(msg.sender, order.amount);
+        checkRound();
     }
     function redeemOrder(uint256 _id) external onlyRegistered onlyTradeRound payable {
         require(_id < orders.length, "Order not found");
@@ -124,6 +126,7 @@ contract ACDMPlatform {
         }
         payable(order.owner).transfer(msg.value);
         ERC20(acdmToken).transfer(msg.sender, amount - amount * 2 * acdmTax / 1000);
+        checkRound();
     }
     function buyACDMToken() external onlyRegistered onlySaleRound payable {
         uint256 amount = (msg.value * baseRate) / (tradeRate * 10 ** 18);
@@ -139,6 +142,7 @@ contract ACDMPlatform {
                 payable(referrers[referrers[msg.sender]]).transfer(tax2);
             }
         }
+        checkRound();
     }
     function setTaxes(uint32 _tax1, uint32 _tax2, uint24 _acdmTax) external onlyDao {
         ref1Tax = _tax1;
@@ -148,5 +152,15 @@ contract ACDMPlatform {
 
     function setDao(address _dao) external onlyOwner {
         dao = _dao;
+    }
+
+    function checkRound() private{
+        if (block.timestamp >= roundStart + roundTime){
+            if (isSaleRound){
+                startTradeRound();
+            } else {
+                startSaleRound();
+            }
+        }
     }
 }
