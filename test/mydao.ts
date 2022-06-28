@@ -1,8 +1,12 @@
 import { expect } from "chai";
-import { Erc20my } from "../typechain-types/Erc20my";
-import { StakeEmy } from "../typechain-types/StakeEmy";
+import { Erc20my } from "../typechain-types/contracts/Erc20my";
+import { StakeEmy } from "../typechain-types/contracts/StakeEmy";
 import { MyDao } from "../typechain-types/MyDao";
 const { ethers } = require("hardhat");
+import tree from "../scripts/merkletree";
+import MerkleTree from "merkletreejs";
+import keccak256 from "keccak256";
+const buf2hex = (x:any) => '0x'+x.toString('hex')
 
 describe("MyDao", function () {
 
@@ -25,6 +29,7 @@ describe("MyDao", function () {
     let MyDaoInstance: MyDao;
     let StakeEmy: any;
     let StakeEmyInstance: StakeEmy;
+    let mt: any;
 
     let calldata: any;
 
@@ -37,35 +42,36 @@ describe("MyDao", function () {
         const jsonAbi = ["function mint(address _to, uint256 _amount)"];
         const iface = new ethers.utils.Interface(jsonAbi);
         calldata = iface.encodeFunctionData('mint',[addr3.address, 10001]);
+        mt = tree.getTree([owner.address, addr1.address, addr2.address]);
     });
 
     beforeEach(async () => {
         Erc20myInstance = await Erc20my.deploy(tokenName, tokenSymbol, tokenDecimals, tokenTotalSupply);
         await Erc20myInstance.deployed();
-        StakeEmyInstance = await StakeEmy.deploy(Erc20myInstance.address, '10000000', 120, 260);
+        StakeEmyInstance = await StakeEmy.deploy(Erc20myInstance.address, '10000000', 120, 260, buf2hex(mt.tree.getRoot()));
         await StakeEmyInstance.deployed();
         await StakeEmyInstance.setLPToken(Erc20myInstance.address);
         MyDaoInstance = await MyDao.deploy(owner.address, StakeEmyInstance.address, voteQuorum, voteDuration);
         await MyDaoInstance.deployed();
         await StakeEmyInstance.setDao(MyDaoInstance.address);
-        Erc20myInstance.setMinter(MyDaoInstance.address);
-        Erc20myInstance.connect(owner).transfer(addr1.address, 1000);
-        Erc20myInstance.connect(owner).transfer(addr2.address, 1000);
-        Erc20myInstance.connect(owner).transfer(addr3.address, 1000);
+        await Erc20myInstance.setMinter(MyDaoInstance.address);
+        await Erc20myInstance.connect(owner).transfer(addr1.address, 1000);
+        await Erc20myInstance.connect(owner).transfer(addr2.address, 1000);
+        await Erc20myInstance.connect(owner).transfer(addr3.address, 1000);
     });
 
     describe("addProposal", function () {
         it("should add proposal", async function () {
             const value = 100;
             await Erc20myInstance.approve(StakeEmyInstance.address, value);
-            await StakeEmyInstance.stake(value);
+            await StakeEmyInstance.stake(value, mt.tree.getHexProof(keccak256(owner.address)));
             const proposalId = await MyDaoInstance.addProposal(calldata, Erc20myInstance.address, "description");
             expect(proposalId.value).to.equal(0);
         });
         it("should be possible to add proposal only for chairman", async function () {
             const value = 100;
             await Erc20myInstance.approve(StakeEmyInstance.address, value);
-            await StakeEmyInstance.stake(value);
+            await StakeEmyInstance.stake(value, mt.tree.getHexProof(keccak256(owner.address)));
             await expect(MyDaoInstance.connect(addr1).addProposal(calldata, Erc20myInstance.address, "description")).to.be.revertedWith("Only chairman allowed");
         });
     });
@@ -75,8 +81,8 @@ describe("MyDao", function () {
             const value = 100;
             await Erc20myInstance.connect(addr1).approve(StakeEmyInstance.address, value - 10);
             await Erc20myInstance.connect(addr2).approve(StakeEmyInstance.address, value);
-            await StakeEmyInstance.connect(addr1).stake(value - 10);
-            await StakeEmyInstance.connect(addr2).stake(value);
+            await StakeEmyInstance.connect(addr1).stake(value - 10, mt.tree.getHexProof(keccak256(addr1.address)));
+            await StakeEmyInstance.connect(addr2).stake(value, mt.tree.getHexProof(keccak256(addr2.address)));
             const proposalId = await MyDaoInstance.addProposal(calldata, Erc20myInstance.address, "description");
             await MyDaoInstance.connect(addr1).vote(proposalId.value, false);
             await MyDaoInstance.connect(addr2).vote(proposalId.value, true);
@@ -94,7 +100,7 @@ describe("MyDao", function () {
         it("Should not be possible to vote twice", async function () {
             const value = 100;
             await Erc20myInstance.connect(addr1).approve(StakeEmyInstance.address, value);
-            await StakeEmyInstance.connect(addr1).stake(value);
+            await StakeEmyInstance.connect(addr1).stake(value, mt.tree.getHexProof(keccak256(addr1.address)));
             const proposalId = await MyDaoInstance.addProposal(calldata, Erc20myInstance.address, "description");
             await MyDaoInstance.connect(addr1).vote(proposalId.value, false);
             await expect(MyDaoInstance.connect(addr1).vote(proposalId.value, false)).to.be.revertedWith("You have already voted");
@@ -103,7 +109,7 @@ describe("MyDao", function () {
         it("should not be possible to vote after vote duration", async function () {
             const value = 100;
             await Erc20myInstance.connect(addr1).approve(StakeEmyInstance.address, value);
-            await StakeEmyInstance.connect(addr1).stake(value);
+            await StakeEmyInstance.connect(addr1).stake(value, mt.tree.getHexProof(keccak256(addr1.address)));
             const proposalId = await MyDaoInstance.addProposal(calldata, Erc20myInstance.address, "description");
             const now = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp;
             await ethers.provider.send("evm_mine", [now + voteDuration]);
@@ -116,8 +122,8 @@ describe("MyDao", function () {
             const value = 100;
             await Erc20myInstance.connect(addr1).approve(StakeEmyInstance.address, value - 10);
             await Erc20myInstance.connect(addr2).approve(StakeEmyInstance.address, value);
-            await StakeEmyInstance.connect(addr1).stake(value - 10);
-            await StakeEmyInstance.connect(addr2).stake(value);
+            await StakeEmyInstance.connect(addr1).stake(value - 10, mt.tree.getHexProof(keccak256(addr1.address)));
+            await StakeEmyInstance.connect(addr2).stake(value, mt.tree.getHexProof(keccak256(addr2.address)));
             const proposalId = await MyDaoInstance.addProposal(calldata, Erc20myInstance.address, "description");
             const now = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp;
             await MyDaoInstance.connect(addr1).vote(proposalId.value, false);
@@ -135,7 +141,7 @@ describe("MyDao", function () {
         it("should finish proposal and not execute function with no quorum", async function () {
             const value = 100;
             await Erc20myInstance.connect(addr1).approve(StakeEmyInstance.address, value);
-            await StakeEmyInstance.connect(addr1).stake(value);
+            await StakeEmyInstance.connect(addr1).stake(value, mt.tree.getHexProof(keccak256(addr1.address)));
             const proposalId = await MyDaoInstance.addProposal(calldata, Erc20myInstance.address, "description");
             const now = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp;
             await MyDaoInstance.connect(addr1).vote(proposalId.value, true);
@@ -152,8 +158,8 @@ describe("MyDao", function () {
             const value = 100;
             await Erc20myInstance.connect(addr1).approve(StakeEmyInstance.address, value - 10);
             await Erc20myInstance.connect(addr2).approve(StakeEmyInstance.address, value);
-            await StakeEmyInstance.connect(addr1).stake(value - 10);
-            await StakeEmyInstance.connect(addr2).stake(value);
+            await StakeEmyInstance.connect(addr1).stake(value - 10, mt.tree.getHexProof(keccak256(addr1.address)));
+            await StakeEmyInstance.connect(addr2).stake(value, mt.tree.getHexProof(keccak256(addr2.address)));
             const proposalId = await MyDaoInstance.addProposal(calldata, Erc20myInstance.address, "description");
             const now = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp;
             await MyDaoInstance.connect(addr1).vote(proposalId.value, true);
@@ -173,7 +179,7 @@ describe("MyDao", function () {
         it("should not be possible to finish proposal twice", async function () {
             const value = 100;
             await Erc20myInstance.connect(addr1).approve(StakeEmyInstance.address, value);
-            await StakeEmyInstance.connect(addr1).stake(value);
+            await StakeEmyInstance.connect(addr1).stake(value, mt.tree.getHexProof(keccak256(addr1.address)));
             const proposalId = await MyDaoInstance.addProposal(calldata, Erc20myInstance.address, "description");
             const now = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp;
             await MyDaoInstance.connect(addr1).vote(proposalId.value, true);
@@ -184,7 +190,7 @@ describe("MyDao", function () {
         it("should not be possible to finish proposal before vote duration", async function () {
             const value = 100;
             await Erc20myInstance.connect(addr1).approve(StakeEmyInstance.address, value);
-            await StakeEmyInstance.connect(addr1).stake(value);
+            await StakeEmyInstance.connect(addr1).stake(value, mt.tree.getHexProof(keccak256(addr1.address)));
             const proposalId = await MyDaoInstance.addProposal(calldata, Erc20myInstance.address, "description");
             await MyDaoInstance.connect(addr1).vote(proposalId.value, true);
             await expect(MyDaoInstance.finishProposal(proposalId.value)).to.be.revertedWith("Voting period has not yet ended");
@@ -193,7 +199,7 @@ describe("MyDao", function () {
             const value = 180;
             await Erc20myInstance.setMinter(addr1.address);
             await Erc20myInstance.connect(addr1).approve(StakeEmyInstance.address, value);
-            await StakeEmyInstance.connect(addr1).stake(value);
+            await StakeEmyInstance.connect(addr1).stake(value, mt.tree.getHexProof(keccak256(addr1.address)));
             const proposalId = await MyDaoInstance.addProposal(calldata, Erc20myInstance.address, "description");
             const now = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp;
             await MyDaoInstance.connect(addr1).vote(proposalId.value, true);

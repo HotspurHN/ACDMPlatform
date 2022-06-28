@@ -1,6 +1,6 @@
 import { expect } from "chai";
-import { Erc20my } from "../typechain-types/Erc20my";
-import { ACDMPlatform } from "../typechain-types/ACDMPlatform";
+import { Erc20my } from "../typechain-types/contracts/Erc20my";
+import { ACDMPlatform } from "../typechain-types/contracts/ACDMPlatform";
 const { ethers } = require("hardhat");
 
 describe("ACDMPlatform", function () {
@@ -32,7 +32,7 @@ describe("ACDMPlatform", function () {
     beforeEach(async () => {
         Erc20myInstance = await Erc20my.deploy(tokenName, tokenSymbol, tokenDecimals, tokenTotalSupply);
         await Erc20myInstance.deployed();
-        
+
         ACDMTokenInstance = await Erc20my.deploy('ACADEM Coin', 'ACDM', 6, 0);
         await ACDMTokenInstance.deployed();
 

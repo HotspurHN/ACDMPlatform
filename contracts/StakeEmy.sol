@@ -1,7 +1,6 @@
 //SPDX-License-Identifier: Unlicense
 pragma solidity ^0.8.0;
 
-import "hardhat/console.sol";
 import "./interfaces/IMintable.sol";
 import "./interfaces/IStake.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -156,6 +155,6 @@ contract StakeEmy is IStake {
     }
 
     function setRoot(bytes32 _root) external onlyDao {
-        merkleRoot = _root;
+        merkleRoot = _root; 
     }
 }

@@ -1,6 +1,6 @@
 import { ethers, run } from "hardhat";
-import { StakeEmy } from "../typechain-types/StakeEmy";
-import { Erc20my } from "../typechain-types/Erc20my";
+import { StakeEmy } from "../typechain-types/contracts/StakeEmy";
+import { Erc20my } from "../typechain-types/contracts/Erc20my";
 import { IUniswapV2Router02 } from "../typechain-types/uniswap/IUniswapV2Router02";
 import { IUniswapV2Factory } from "../typechain-types/uniswap/IUniswapV2Factory";
 import { IErc20 } from "../typechain-types/interfaces/IErc20";

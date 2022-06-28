@@ -1,7 +1,7 @@
 const { ethers } = require("hardhat");
-import { StakeEmy } from "../typechain-types/StakeEmy";
-import { Erc20my } from "../typechain-types/Erc20my";
-import { IUniswapV2Router02 } from "../typechain-types/uniswap/IUniswapV2Router02";
+import { StakeEmy } from "../typechain-types/contracts/StakeEmy";
+import { Erc20my } from "../typechain-types/contracts/Erc20my";
+import { IUniswapV2Router02 } from "../typechain-types/contracts/uniswap/IUniswapV2Router02";
 import constants from "../scripts/constants";
 const Web3 = require('web3');
 const web3 = new Web3();

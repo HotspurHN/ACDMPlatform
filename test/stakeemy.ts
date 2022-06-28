@@ -1,8 +1,8 @@
 import { expect } from "chai";
-import { StakeEmy } from "../typechain-types/StakeEmy";
-import { Erc20my } from "../typechain-types/Erc20my";
-import { MyDao } from "../typechain-types/MyDao";
-import { IUniswapV2Router02 } from "../typechain-types/uniswap/IUniswapV2Router02";
+import { StakeEmy } from "../typechain-types/contracts/StakeEmy";
+import { Erc20my } from "../typechain-types/contracts/Erc20my";
+import { MyDao } from "../typechain-types/contracts/MyDao";
+import { IUniswapV2Router02 } from "../typechain-types/contracts/uniswap/IUniswapV2Router02";
 import { IERC20 } from "../typechain-types/@openzeppelin/contracts/token/ERC20/IERC20";
 const { ethers } = require("hardhat");
 import testTools from "./tools";
@@ -38,11 +38,10 @@ describe("StakeEmy", function () {
     const freeze: number = 20;
     const pool: number = 210000000;
 
-    let calldata;
     let mt: {tree: any, leafNodes: any[]};
 
     const _setLPToken = async () => {
-        PairErc20 = await tools._setLPToken(Erc20myInstance, StakeEmyInstance, Router, owner.address, '10000000000000000000', '10000000000000000');
+        PairErc20 = await tools._setLPToken(Erc20myInstance, StakeEmyInstance, Router, owner.address, '10000000000000000000', '10000000');
     }
 
     before(async () => {
@@ -52,19 +51,16 @@ describe("StakeEmy", function () {
         MyDao = await ethers.getContractFactory("MyDao");
         Router = await ethers.getContractAt("IUniswapV2Router02", constants.uniswapRouterAddress);
         mt = tree.getTree([owner.address, addr1.address, addr2.address]);
+
     });
 
     beforeEach(async () => {
         Erc20myInstance = await Erc20my.deploy(tokenName, tokenSymbol, tokenDecimals, tokenTotalSupply);
         await Erc20myInstance.deployed();
-
-        //const jsonAbi = ["function setRoot(bytes32 _root)"];
-        //const iface = new ethers.utils.Interface(jsonAbi);
-        //calldata = iface.encodeFunctionData('setRoot', buf2hex(mt.tree.getRoot()));
         StakeEmyInstance = await StakeEmy.deploy(Erc20myInstance.address, pool, coolDown, freeze, buf2hex(mt.tree.getRoot()));
         await StakeEmyInstance.deployed();
         
-        MyDaoInstance = await MyDao.deploy(owner.address, StakeEmyInstance.address, 100, 100);
+        MyDaoInstance = await MyDao.deploy(owner.address, StakeEmyInstance.address, 50, 50);
         await MyDaoInstance.deployed();
         await StakeEmyInstance.setDao(MyDaoInstance.address);
         await Erc20myInstance.setMinter(StakeEmyInstance.address);
@@ -78,11 +74,8 @@ describe("StakeEmy", function () {
 
     describe("stake", function () {
         it("Should stake tokens", async function () {
-            console.log(0);
             await _setLPToken();
-            console.log(1);
             await PairErc20.approve(StakeEmyInstance.address, 100);
-            console.log(mt.tree.getHexProof(keccak256(owner.address)));
             await StakeEmyInstance.stake(100, mt.tree.getHexProof(keccak256(owner.address)));
             expect(await StakeEmyInstance.balanceOf(owner.address)).to.equal(100);
             expect(await StakeEmyInstance.allStaked()).to.equal(100);
@@ -304,4 +297,37 @@ describe("StakeEmy", function () {
 
     });
 
+    describe("Set root", function () {
+        it("Should set root", async function () {
+            await _setLPToken();
+            const stake = 100;
+            const stake1 = 150;
+
+            await PairErc20.approve(StakeEmyInstance.address, stake * 10);
+            await PairErc20.transfer(addr1.address, stake1);
+            await PairErc20.connect(addr1).approve(StakeEmyInstance.address, stake1);
+            await PairErc20.transfer(addr2.address, stake1);
+            await PairErc20.connect(addr2).approve(StakeEmyInstance.address, stake1);
+
+            await StakeEmyInstance.connect(addr2).stake(1, mt.tree.getHexProof(keccak256(addr2.address)));
+            await StakeEmyInstance.connect(addr1).stake(100, mt.tree.getHexProof(keccak256(addr1.address)));
+
+            const newMt = tree.getTree([owner.address, addr1.address]);
+
+            const jsonAbi = ["function setRoot(bytes32 _root)"];
+            const iface = new ethers.utils.Interface(jsonAbi);
+            const calldata = iface.encodeFunctionData('setRoot',[buf2hex(newMt.tree.getRoot())]);
+
+            const proposalId = await MyDaoInstance.addProposal(calldata, StakeEmyInstance.address, "description");
+            const now = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp;
+            await MyDaoInstance.connect(addr1).vote(proposalId.value, true);
+
+            await ethers.provider.send("evm_mine", [now + 100]);
+
+            await MyDaoInstance.finishProposal(proposalId.value);
+
+            await expect(StakeEmyInstance.stake(100, newMt.tree.getHexProof(keccak256(owner.address)))).to.be.not.reverted;
+            await expect(StakeEmyInstance.connect(addr2).stake(50, newMt.tree.getHexProof(keccak256(addr2.address)))).to.be.revertedWith('Invalid proof');
+        });
+    });
 });
