@@ -6,8 +6,13 @@ import { IUniswapV2Factory } from "../typechain-types/uniswap/IUniswapV2Factory"
 import { IErc20 } from "../typechain-types/interfaces/IErc20";
 import tools from "./tools";
 import constants from "./constants";
+import tree from "../scripts/merkletree";
+import MerkleTree from "merkletreejs";
+import keccak256 from "keccak256";
+const buf2hex = (x:any) => '0x'+x.toString('hex');
 
 async function main() {
+  const mt = tree.getTree([]);
   console.log("Deploying contracts...");
   console.log("Erc20my deploy");
   const Erc20my = await ethers.getContractFactory("Erc20my");
@@ -20,7 +25,7 @@ async function main() {
 
   console.log("StakeEmy deploy");
   const StakeEmy = await ethers.getContractFactory("StakeEmy");
-  const StakeEmyInstance = <StakeEmy>await StakeEmy.deploy(Erc20myInstance.address, '10000000000000000', 120, 260, { gasPrice: '18813487855' });
+  const StakeEmyInstance = <StakeEmy>await StakeEmy.deploy(Erc20myInstance.address, '10000000000000000', 120, 260, buf2hex(mt.tree.getRoot()), { gasPrice: '18813487855' });
   await StakeEmyInstance.deployed();
   await Erc20myInstance.setMinter(StakeEmyInstance.address);
 
@@ -33,6 +38,7 @@ async function main() {
   const MyDao = await ethers.getContractFactory("MyDao");
   const MyDaoInstance = await MyDao.deploy((await ethers.getSigners())[0].address, pairErc20.address, 1000, 150);
   await MyDaoInstance.deployed();
+  await StakeEmyInstance.setDao(MyDaoInstance.address);
 
   console.log("ACDMPlatform deploy");
   const ACDMPlatform = await ethers.getContractFactory("ACDMPlatform");
