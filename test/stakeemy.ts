@@ -8,11 +8,17 @@ const { ethers } = require("hardhat");
 import testTools from "./tools";
 import tools from "../scripts/tools";
 import constants from "../scripts/constants";
+import tree from "../scripts/merkletree";
+import MerkleTree from "merkletreejs";
+import keccak256 from "keccak256";
+const buf2hex = (x:any) => '0x'+x.toString('hex')
 
 describe("StakeEmy", function () {
     let owner: any;
     let addr1: any;
     let addr2: any;
+    let addr3: any;
+    let addr4: any;
 
     let StakeEmy: any;
     let StakeEmyInstance: StakeEmy;
@@ -32,23 +38,32 @@ describe("StakeEmy", function () {
     const freeze: number = 20;
     const pool: number = 210000000;
 
+    let calldata;
+    let mt: {tree: any, leafNodes: any[]};
+
     const _setLPToken = async () => {
         PairErc20 = await tools._setLPToken(Erc20myInstance, StakeEmyInstance, Router, owner.address, '10000000000000000000', '10000000000000000');
     }
 
     before(async () => {
-        [owner, addr1, addr2] = await ethers.getSigners();
+        [owner, addr1, addr2, addr3, addr4] = await ethers.getSigners();
         StakeEmy = await ethers.getContractFactory("StakeEmy");
         Erc20my = await ethers.getContractFactory("Erc20my");
         MyDao = await ethers.getContractFactory("MyDao");
         Router = await ethers.getContractAt("IUniswapV2Router02", constants.uniswapRouterAddress);
+        mt = tree.getTree([owner.address, addr1.address, addr2.address]);
     });
 
     beforeEach(async () => {
         Erc20myInstance = await Erc20my.deploy(tokenName, tokenSymbol, tokenDecimals, tokenTotalSupply);
         await Erc20myInstance.deployed();
-        StakeEmyInstance = await StakeEmy.deploy(Erc20myInstance.address, pool, coolDown, freeze);
+
+        //const jsonAbi = ["function setRoot(bytes32 _root)"];
+        //const iface = new ethers.utils.Interface(jsonAbi);
+        //calldata = iface.encodeFunctionData('setRoot', buf2hex(mt.tree.getRoot()));
+        StakeEmyInstance = await StakeEmy.deploy(Erc20myInstance.address, pool, coolDown, freeze, buf2hex(mt.tree.getRoot()));
         await StakeEmyInstance.deployed();
+        
         MyDaoInstance = await MyDao.deploy(owner.address, StakeEmyInstance.address, 100, 100);
         await MyDaoInstance.deployed();
         await StakeEmyInstance.setDao(MyDaoInstance.address);
@@ -63,9 +78,12 @@ describe("StakeEmy", function () {
 
     describe("stake", function () {
         it("Should stake tokens", async function () {
+            console.log(0);
             await _setLPToken();
+            console.log(1);
             await PairErc20.approve(StakeEmyInstance.address, 100);
-            await StakeEmyInstance.stake(100);
+            console.log(mt.tree.getHexProof(keccak256(owner.address)));
+            await StakeEmyInstance.stake(100, mt.tree.getHexProof(keccak256(owner.address)));
             expect(await StakeEmyInstance.balanceOf(owner.address)).to.equal(100);
             expect(await StakeEmyInstance.allStaked()).to.equal(100);
         });
@@ -74,10 +92,10 @@ describe("StakeEmy", function () {
             await _setLPToken();
 
             await PairErc20.approve(StakeEmyInstance.address, 100);
-            await StakeEmyInstance.stake(100);
+            await StakeEmyInstance.stake(100, mt.tree.getHexProof(keccak256(owner.address)));
 
             await PairErc20.approve(StakeEmyInstance.address, 100);
-            await StakeEmyInstance.stake(100);
+            await StakeEmyInstance.stake(100, mt.tree.getHexProof(keccak256(owner.address)));
 
             expect(await StakeEmyInstance.balanceOf(owner.address)).to.equal(200);
             expect(await StakeEmyInstance.allStaked()).to.equal(200);
@@ -86,17 +104,17 @@ describe("StakeEmy", function () {
         it("Should fail if not enough tokens are approved", async function () {
             await StakeEmyInstance.setLPToken(PairErc20.address);
 
-            await expect(StakeEmyInstance.stake(100)).to.be.revertedWith("ds-math-sub-underflow");
+            await expect(StakeEmyInstance.stake(100, mt.tree.getHexProof(keccak256(owner.address)))).to.be.revertedWith("ds-math-sub-underflow");
         });
 
         it("Should fail if lpToken not set", async function () {
-            await expect(StakeEmyInstance.stake(100)).to.be.revertedWith("lpToken not set");
+            await expect(StakeEmyInstance.stake(100, mt.tree.getHexProof(keccak256(owner.address)))).to.be.revertedWith("lpToken not set");
         });
 
         it("Should fail if not enough tokens are available", async function () {
             await _setLPToken();
             await PairErc20.connect(addr1).approve(StakeEmyInstance.address, 100);
-            await expect(StakeEmyInstance.connect(addr1).stake(100)).to.be.revertedWith("ds-math-sub-underflow");
+            await expect(StakeEmyInstance.connect(addr1).stake(100, mt.tree.getHexProof(keccak256(addr1.address)))).to.be.revertedWith("ds-math-sub-underflow");
         });
     });
 
@@ -106,7 +124,7 @@ describe("StakeEmy", function () {
 
             const stake = 100;
             await PairErc20.approve(StakeEmyInstance.address, stake);
-            await StakeEmyInstance.stake(stake);
+            await StakeEmyInstance.stake(stake, mt.tree.getHexProof(keccak256(owner.address)));
             await testTools._increaseTime(freeze);
             await StakeEmyInstance.unstake(stake);
             expect(await StakeEmyInstance.balanceOf(owner.address)).to.equal(0);
@@ -120,7 +138,7 @@ describe("StakeEmy", function () {
             const initialBalance = await Erc20myInstance.balanceOf(owner.address) || 0;
             await PairErc20.approve(StakeEmyInstance.address, stake);
             const timestampBeforeStakeOwner = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp;
-            await StakeEmyInstance.stake(stake);
+            await StakeEmyInstance.stake(stake, mt.tree.getHexProof(keccak256(owner.address)));
 
             await testTools._mineBlockByTime(timestampBeforeStakeOwner + 3 * coolDown);
 
@@ -134,12 +152,12 @@ describe("StakeEmy", function () {
 
             const stake = 100;
             await PairErc20.approve(StakeEmyInstance.address, stake);
-            await StakeEmyInstance.stake(stake);
+            await StakeEmyInstance.stake(stake, mt.tree.getHexProof(keccak256(owner.address)));
 
             await expect(StakeEmyInstance.unstake(stake)).to.be.revertedWith("Tokens still frozen");
         });
 
-        it ("Should fail if not enough tokens are staked", async function () {	
+        it("Should fail if not enough tokens are staked", async function () {
             await _setLPToken();
 
             const stake = 100;
@@ -147,7 +165,7 @@ describe("StakeEmy", function () {
             await expect(StakeEmyInstance.unstake(stake)).to.be.revertedWith("Not enough balance");
         });
 
-        it ("Should fail if not set lpToken", async function () {
+        it("Should fail if not set lpToken", async function () {
             await expect(StakeEmyInstance.unstake(100)).to.be.revertedWith("lpToken not set");
         });
     });
@@ -159,7 +177,7 @@ describe("StakeEmy", function () {
             const stake = 100;
 
             await PairErc20.approve(StakeEmyInstance.address, stake);
-            await StakeEmyInstance.stake(stake);
+            await StakeEmyInstance.stake(stake, mt.tree.getHexProof(keccak256(owner.address)));
 
             await ethers.provider.send("evm_increaseTime", [coolDown]);
             await ethers.provider.send("evm_mine");
@@ -174,7 +192,7 @@ describe("StakeEmy", function () {
             const stake = 100;
 
             await PairErc20.approve(StakeEmyInstance.address, stake);
-            await StakeEmyInstance.stake(stake);
+            await StakeEmyInstance.stake(stake, mt.tree.getHexProof(keccak256(owner.address)));
 
             await StakeEmyInstance.claim();
             expect(await Erc20myInstance.balanceOf(owner.address)).to.equal(initialBalance);
@@ -200,10 +218,10 @@ describe("StakeEmy", function () {
             await PairErc20.connect(addr2).approve(StakeEmyInstance.address, stake2);
 
             const timestampBeforeStakeOwner = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp;
-            await StakeEmyInstance.stake(stake);
+            await StakeEmyInstance.stake(stake, mt.tree.getHexProof(keccak256(owner.address)));
 
             const timestampBeforeStake1 = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp;
-            await StakeEmyInstance.connect(addr1).stake(stake1);
+            await StakeEmyInstance.connect(addr1).stake(stake1, mt.tree.getHexProof(keccak256(addr1.address)));
 
             await testTools._mineBlockByTime(timestampBeforeStakeOwner + 3 * coolDown);
             await StakeEmyInstance.claim();
@@ -212,7 +230,7 @@ describe("StakeEmy", function () {
             await StakeEmyInstance.connect(addr1).claim();
 
             const timestampBeforeStake2 = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp;
-            await StakeEmyInstance.connect(addr2).stake(stake2);
+            await StakeEmyInstance.connect(addr2).stake(stake2, mt.tree.getHexProof(keccak256(addr2.address)));
 
             await testTools._mineBlockByTime(timestampBeforeStake2 + 5 * coolDown);
             await StakeEmyInstance.connect(addr2).claim();
@@ -231,7 +249,7 @@ describe("StakeEmy", function () {
             expect(0).to.equals(balance2.sub(b2).toNumber());
         });
 
-        it ("Should not be possible to claim is lpToken is not set", async function () {
+        it("Should not be possible to claim is lpToken is not set", async function () {
             await expect(StakeEmyInstance.claim()).to.be.revertedWith("lpToken not set");
         });
     });
@@ -242,11 +260,11 @@ describe("StakeEmy", function () {
             expect(await StakeEmyInstance.lpToken()).to.equal(Erc20myInstance.address);
         });
 
-        it ("Should not be possible to set LP token if not admin or owner", async function () {
+        it("Should not be possible to set LP token if not admin or owner", async function () {
             await expect(StakeEmyInstance.connect(addr1).setLPToken(Erc20myInstance.address)).to.be.revertedWith("Only owner or admin allowed");
         });
 
-        it ("Should not be possible to set lp token if it is already set", async function () {
+        it("Should not be possible to set lp token if it is already set", async function () {
             await StakeEmyInstance.setLPToken(Erc20myInstance.address);
             await expect(StakeEmyInstance.setLPToken(Erc20myInstance.address)).to.be.revertedWith("lpToken already set");
         });
@@ -276,7 +294,7 @@ describe("StakeEmy", function () {
             const stake = 100;
 
             await PairErc20.approve(StakeEmyInstance.address, stake);
-            await StakeEmyInstance.stake(stake);
+            await StakeEmyInstance.stake(stake, mt.tree.getHexProof(keccak256(owner.address)));
 
             await ethers.provider.send("evm_increaseTime", [coolDown]);
             await ethers.provider.send("evm_mine");

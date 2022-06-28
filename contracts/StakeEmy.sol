@@ -6,6 +6,7 @@ import "./interfaces/IMintable.sol";
 import "./interfaces/IStake.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./MyDao.sol";
+import "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 
 contract StakeEmy is IStake {
     uint256 public pool;
@@ -16,6 +17,8 @@ contract StakeEmy is IStake {
     uint256 private lastValue;
     uint256 private lastUpdate;
     uint256 private deltaPeriod;
+
+    bytes32 public merkleRoot;
 
     address private owner;
     address private admin;
@@ -48,20 +51,28 @@ contract StakeEmy is IStake {
         _;
     }
 
+    modifier whitelistVerify(bytes32[] calldata _merkleProof){
+        bytes32 leaf = keccak256(abi.encodePacked(msg.sender));
+        require(MerkleProof.verify(_merkleProof, merkleRoot, leaf), "Invalid proof");
+        _;
+    }
+
     constructor(
         address _rewarToken,
         uint256 _pool,
         uint256 _coolDown,
-        uint256 _freezeTime
+        uint256 _freezeTime,
+        bytes32 _merkleRoot
     ) {
         rewardToken = _rewarToken;
         pool = _pool;
         coolDown = _coolDown;
         owner = msg.sender;
         freezeTime = _freezeTime;
+        merkleRoot = _merkleRoot;
     }
 
-    function stake(uint256 _amount) public {
+    function stake(uint256 _amount, bytes32[] calldata _merkleProof) whitelistVerify(_merkleProof) public {
         require(lpToken != address(0), "lpToken not set");
         if (balances[msg.sender] > 0) {
             _claim();
@@ -142,5 +153,9 @@ contract StakeEmy is IStake {
         deltaPeriod = deltaPeriod + (block.timestamp - startPool) / coolDown;
         startPool = block.timestamp;
         coolDown = _coolDown;
+    }
+
+    function setRoot(bytes32 _root) external onlyDao {
+        merkleRoot = _root;
     }
 }

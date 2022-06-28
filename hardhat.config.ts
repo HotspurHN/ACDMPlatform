@@ -29,10 +29,12 @@ const config: HardhatUserConfig = {
       accounts: [`${PRIVATE_KEY}`]
     },
     hardhat: {
+      initialBaseFeePerGas: 0,
       forking: {
         url: `https://eth-mainnet.alchemyapi.io/v2/${ALCHEMY_API_KEY}`,
         blockNumber: 14390000
-      }
+      },
+      gas: 1800000,
     }
   },
   gasReporter: {
