@@ -105,6 +105,7 @@ contract ACDMPlatform {
     }
     function removeOrder(uint256 _id) onlyRegistered external {
         require(_id < orders.length, "Order not found");
+        require(msg.sender == owner, "Only owner can remove order");
         Order memory order = orders[_id];
         require(order.amount > 0, "Order already closed");
         orders[_id].amount = 0;
@@ -155,7 +156,7 @@ contract ACDMPlatform {
     }
 
     function checkRound() private{
-        if (block.timestamp >= roundStart + roundTime){
+        if (block.timestamp >= roundStart + roundTime || (isSaleRound && acdmTokenPool == 0)){
             if (isSaleRound){
                 startTradeRound();
             } else {

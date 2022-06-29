@@ -60,7 +60,7 @@ contract MyDao {
         });
         proposals.push(proposal);
         emit ProposalCreated(_proposalId, proposal.startTime + duration);
-        return proposals.length;
+        return proposals.length - 1;
     }
 
     function vote(uint256 _proposalIndex, bool _answer) external {
@@ -78,7 +78,9 @@ contract MyDao {
             proposal.votesNo +=  IStake(stake).balanceOf(msg.sender);
         }
         voted[_proposalIndex][msg.sender] = true;
-        endVote[msg.sender] = proposal.startTime + duration;
+        if (endVote[msg.sender] < proposal.startTime + duration){
+            endVote[msg.sender] = proposal.startTime + duration;
+        }
         emit Voted(_proposalIndex, msg.sender, _answer);
     }
 

@@ -1,7 +1,7 @@
 import { expect } from "chai";
 import { Erc20my } from "../typechain-types/contracts/Erc20my";
 import { StakeEmy } from "../typechain-types/contracts/StakeEmy";
-import { MyDao } from "../typechain-types/MyDao";
+import { MyDao } from "../typechain-types/contracts/MyDao";
 const { ethers } = require("hardhat");
 import tree from "../scripts/merkletree";
 import MerkleTree from "merkletreejs";
